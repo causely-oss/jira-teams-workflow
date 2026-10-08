@@ -1,0 +1,96 @@
+# Single-replica deployment. Create the Secret and ConfigMap first (see README "Deploying"):
+#   kubectl -n causely-jira create secret generic causely-jira-env --from-env-file=.env
+#   kubectl -n causely-jira create configmap causely-jira-config --from-file=config.yaml
+# Then replace the image and host below and: kubectl apply -f deploy/kubernetes.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: causely-jira
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: causely-jira-state
+  namespace: causely-jira
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: causely-jira
+  namespace: causely-jira
+spec:
+  replicas: 1              # never more than 1: the dedup lock and SQLite state are per process
+  strategy:
+    type: Recreate         # no overlap during rollouts, so two pods never handle the same Issue
+  selector:
+    matchLabels: {app: causely-jira}
+  template:
+    metadata:
+      labels: {app: causely-jira}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+      containers:
+        - name: app
+          image: ghcr.io/causely-oss/jira-teams-workflow:main   # or pin a v* tag or sha-<commit>
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - secretRef: {name: causely-jira-env}
+          env:
+            - {name: STATE_DB, value: /data/state.db}
+            - {name: ROUTING_CONFIG, value: /config/config.yaml}
+          volumeMounts:
+            - {name: state, mountPath: /data}
+            - {name: config, mountPath: /config, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 30
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {memory: 1Gi}     # each agent run starts a Claude Code subprocess
+      volumes:
+        - name: state
+          persistentVolumeClaim: {claimName: causely-jira-state}
+        - name: config
+          configMap: {name: causely-jira-config}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: causely-jira
+  namespace: causely-jira
+spec:
+  selector: {app: causely-jira}
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+# Public HTTPS entry for Causely, Datadog, and Dynatrace webhooks. In-cluster Alertmanager can
+# skip this and call http://causely-jira.causely-jira.svc.cluster.local/webhooks/alerts/alertmanager
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: causely-jira
+  namespace: causely-jira
+spec:
+  rules:
+    - host: causely-jira.example.com
+      http:
+        paths:
+          - path: /webhooks
+            pathType: Prefix
+            backend:
+              service: {name: causely-jira, port: {number: 80}}
+  tls:
+    - hosts: [causely-jira.example.com]
+      secretName: causely-jira-tls

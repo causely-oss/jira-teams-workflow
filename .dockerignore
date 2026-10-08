@@ -1,0 +1,13 @@
+.git
+.venv
+.env
+config.yaml
+state.db
+tests
+deploy
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+dry-run
+state.dryrun.db

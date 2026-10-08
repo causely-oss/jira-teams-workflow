@@ -1,0 +1,54 @@
+jira:
+  # rovo = all Jira reads/writes go through the Atlassian Rovo MCP server (called from code).
+  # rest = Jira Cloud REST v3 directly. Same behavior either way.
+  # rest until an org admin enables Rovo MCP API-token auth. The personal API token
+  # can call Jira REST today; Rovo MCP rejects it.
+  backend: rest
+
+  # Where the bot may write. There is no implicit default: the service refuses to start
+  # unless `default` and every route project are in `allowed` and not in `blocked`.
+  # Pick per deployment here, per route below, or per webhook with ?project=KEY
+  # (the override must also be in `allowed`).
+  projects:
+    default: CHANGE_ME          # e.g. a dedicated incident / reliability project (OPS)
+    allowed: [CHANGE_ME]
+    blocked: []                 # never write here, even if listed above, e.g. [SEC, HR]
+  # Must exist in every allowed project, with no required fields beyond summary.
+  # Check: GET /rest/api/3/issue/createmeta/<KEY>/issuetypes
+  issue_type: Task
+  # Tickets are only auto-created at or above this Causely severity.
+  # Lower-severity Issues still post to Teams. Keeps autonomous mode from flooding Jira.
+  min_ticket_severity: Medium
+  priority_map:                 # Causely severity -> Jira priority name
+    Critical: Highest
+    High: High
+    Medium: Medium
+    Low: Low
+  extra_labels: [causely, auto-triage]
+  # Min seconds between evidence comments on one ticket. Severity escalation and
+  # resolution bypass it. Causely Issues can rotate primary diagnosis many times a day.
+  evidence_cooldown_seconds: 1800
+
+  # First match wins. Keys are matched against the Causely Issue's affected entity.
+  # namespace / cluster / entity_name support glob patterns. Projects must be allowed.
+  routes: []
+    # - match: { cluster: "prod-us-east" }
+    #   project: DEMO
+    # - match: { namespace: "payments*" }
+    #   project: PAY
+    # - match: { team_label: "platform-team" }   # causely.ai/team label, when present
+    #   project: PLAT
+
+alerts:
+  # Ignore repeat deliveries of the same alert fingerprint inside this window.
+  dedup_window_seconds: 600
+
+rovo:
+  # Before opening a ticket, a read-only agent searches Jira via Rovo for an open ticket a
+  # person already filed for the same problem. High-confidence match -> attach to it
+  # (label + evidence comment) instead of creating. Medium -> create, flag possible duplicate.
+  dedup_check: true
+  lookback_days: 14            # Rovo searches only jira.projects.allowed
+  # Rovo Search also covers Confluence (past postmortems, runbooks) but costs up to
+  # 10 Rovo credits per call. Off by default.
+  use_rovo_search: false

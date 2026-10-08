@@ -1,0 +1,10 @@
+.venv/
+.env
+state.db
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.DS_Store
+config.yaml
+dry-run/
+state.dryrun.db
