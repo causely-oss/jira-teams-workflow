@@ -16,16 +16,24 @@ Both triggers end in the same code path, so an Issue never gets two tickets.
 - Python 3.11+
 
 ```mermaid
-flowchart LR
-  C[Causely Issue notification] -->|POST /webhooks/causely| W
-  A[Datadog / Alertmanager / Dynatrace] -->|POST /webhooks/alerts/:source| T[Triage agent<br/>Claude Agent SDK + Causely MCP<br/>read-only]
-  T -->|Causely Issue id| W[handle_issue<br/>per-Issue lock]
-  T -->|no Issue| TM
-  W -->|get_issue_details, deterministic| CM[(Causely MCP)]
-  W -->|new Issue?| R[Rovo dedup agent<br/>read-only, Rovo MCP]
-  R -->|human ticket / related| W
-  W -->|Rovo MCP tools, called from code<br/>label causely-issue-UUID| J[(Jira)]
-  W --> TM[Teams channel<br/>Adaptive Card]
+flowchart TB
+  C["Causely Issue notification"]
+  A["Alert from Datadog, Alertmanager,<br/>Dynatrace, or generic JSON"]
+  T["Triage agent<br/>read-only, Causely MCP"]
+  W["handle_issue<br/>one lock per Issue"]
+  CM[("Causely MCP")]
+  R["Duplicate check agent<br/>read-only, Rovo MCP"]
+  J[("Jira")]
+  TM["Teams channel"]
+
+  A -->|"/webhooks/alerts/:source"| T
+  C -->|"/webhooks/causely"| W
+  T -->|"Causely Issue id"| W
+  T -.->|"no Issue"| TM
+  W <-->|"get_issue_details<br/>generate_ticket"| CM
+  W <-->|"new Issue: ticket a<br/>person already opened?"| R
+  W -->|"create or comment<br/>label causely-issue-id"| J
+  W -->|"Adaptive Card"| TM
 ```
 
 ## Try it locally with Claude Code
