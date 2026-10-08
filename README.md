@@ -34,6 +34,9 @@ The quickest way to try this is to let [Claude Code](https://claude.com/claude-c
 
 You need a Causely API client (id and secret) and an [Anthropic API key](https://console.anthropic.com/). A Claude subscription doesn't cover the agent calls. Each test alert costs a few cents. Copy this prompt into Claude Code, started in an empty folder:
 
+<details>
+<summary><b>Show the Claude Code prompt</b> (expand, then use the copy button)</summary>
+
 ````text
 Help me test https://github.com/causely-oss/jira-teams-workflow locally in dry-run mode.
 Go one step at a time, say briefly what each step does, and stop where I need to act.
@@ -84,6 +87,8 @@ Ground rules:
    TEAMS_WORKFLOW_URL.
 9. When we're done, stop the server.
 ````
+
+</details>
 
 ## Where Rovo sits
 
