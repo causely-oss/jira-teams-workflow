@@ -120,7 +120,7 @@ Rovo MCP is used in two places:
    - **Low confidence:** the bot creates a ticket, adding any related items the agent found to the description.
    - **The Rovo check fails:** the bot still creates the ticket. A Rovo outage never blocks ticketing.
 
-   Before acting on any ticket key the agent names, the code fetches that ticket again from Jira. It never acts on the key alone.
+   The agent only suggests a ticket. Before writing to it, the bot looks the ticket up in Jira itself, so a made-up, closed, or off-limits ticket is never touched.
 
 Matching on text alone is not reliable. A `text ~ "payment-gw"` search also returns closed, unrelated tickets that only mention the service, which is why the agent judges each match instead of trusting it.
 
