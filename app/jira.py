@@ -8,11 +8,17 @@ def issue_label(issue_id: str) -> str:
     return f"causely-issue-{issue_id}"
 
 
+def api_base(site_url: str, cloud_id: str) -> str:
+    """Scoped API tokens only work through the api.atlassian.com gateway (401 on the site URL).
+    Classic tokens work there too, so always use it when the cloud id is known."""
+    return f"https://api.atlassian.com/ex/jira/{cloud_id}" if cloud_id else site_url.rstrip("/")
+
+
 class JiraClient:
-    def __init__(self, base_url: str, email: str, token: str):
-        self.base = base_url.rstrip("/")
-        self.http = httpx.AsyncClient(base_url=self.base, auth=(email, token), timeout=30,
-                                      headers={"Accept": "application/json"})
+    def __init__(self, base_url: str, email: str, token: str, cloud_id: str = ""):
+        self.base = base_url.rstrip("/")  # the site, for browse links
+        self.http = httpx.AsyncClient(base_url=api_base(base_url, cloud_id), auth=(email, token),
+                                      timeout=30, headers={"Accept": "application/json"})
 
     def browse_url(self, key: str) -> str:
         return f"{self.base}/browse/{key}"

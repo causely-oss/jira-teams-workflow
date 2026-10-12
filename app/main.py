@@ -56,13 +56,14 @@ async def lifespan(app: FastAPI):
     s = Settings.load()
     s.validate_projects()  # no allowed list or a blocked default -> refuse to start
     app.state.settings = s
+    await s.resolve_cloud_id()
     r_headers = s.rovo_headers
     jira = None
     if s.has_jira_credentials:
         if s.jira_cfg.get("backend", "rovo") == "rovo":
             jira = RovoJiraClient(s.rovo_mcp_url, r_headers, s.atlassian_cloud_id, s.jira_base_url)
         else:
-            jira = JiraClient(s.jira_base_url, s.jira_email, s.jira_api_token)
+            jira = JiraClient(s.jira_base_url, s.jira_email, s.jira_api_token, s.atlassian_cloud_id)
     real_jira = jira
     if s.jira_dry_run:
         jira = DryRunJira(real_jira, s.dry_run_dir)

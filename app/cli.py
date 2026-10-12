@@ -16,6 +16,7 @@ import httpx
 from .causely import CauselyClient
 from .causely_auth import CauselyAuth
 from .rovo import probe_rovo
+from .jira import api_base
 from .settings import SEVERITY_RANK, Settings
 
 OK, WARN, FAIL = "ok  ", "warn", "FAIL"
@@ -87,13 +88,22 @@ async def _check_jira(s: Settings) -> bool:
     headers = {"Accept": "application/json"}
     if auth is None:
         headers["Authorization"] = f"Bearer {s.atlassian_service_key}"
-    async with httpx.AsyncClient(base_url=s.jira_base_url.rstrip("/"), timeout=20,
+    cloud_id = await s.resolve_cloud_id()
+    if not cloud_id:
+        _line(WARN, "Atlassian cloud id", "couldn't look it up from JIRA_BASE_URL; set ATLASSIAN_CLOUD_ID")
+    async with httpx.AsyncClient(base_url=api_base(s.jira_base_url, cloud_id), timeout=20,
                                  auth=auth, headers=headers) as http:
         failed = False
         for project in s.allowed_projects:
             r = await http.get(f"/rest/api/3/issue/createmeta/{project}/issuetypes")
+            if r.status_code == 401:
+                _line(FAIL, f"Jira {project}", "HTTP 401: JIRA_EMAIL / JIRA_API_TOKEN rejected. Use a scoped "
+                      "API token with the scopes listed in .env.example")
+                failed = True
+                continue
             if r.status_code != 200:
-                _line(FAIL, f"Jira {project}", f"HTTP {r.status_code}; project missing or no create permission")
+                _line(FAIL, f"Jira {project}", f"HTTP {r.status_code}; project missing, or the token lacks "
+                      "read:jira-work / write:jira-work, or you can't create issues there")
                 failed = True
                 continue
             types = {t["name"]: t["id"] for t in r.json().get("issueTypes", r.json().get("values", []))}
@@ -121,7 +131,7 @@ async def _check_rovo(s: Settings) -> bool:
     if backend != "rovo" and not dedup:
         _line(OK, "Rovo MCP", "not used (backend rest, rovo.dedup_check false)")
         return False
-    err = await probe_rovo(s.rovo_mcp_url, s.rovo_headers, s.atlassian_cloud_id)
+    err = await probe_rovo(s.rovo_mcp_url, s.rovo_headers, await s.resolve_cloud_id())
     if err is None:
         _line(OK, "Rovo MCP", "reachable" + (", duplicate check on" if dedup else ""))
         return False

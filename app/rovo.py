@@ -78,7 +78,7 @@ async def probe_rovo(mcp_url: str, headers: dict[str, str], cloud_id: str) -> st
     Without org-admin approval, Rovo MCP rejects API tokens on every call. An agent that
     can't call its tools would just report "no duplicate", so check before relying on it."""
     if not cloud_id:
-        return "ATLASSIAN_CLOUD_ID is not set"
+        return "Atlassian cloud id unknown: set ATLASSIAN_CLOUD_ID or check JIRA_BASE_URL"
     try:
         await McpToolClient(mcp_url, headers).call(
             "searchJiraIssuesUsingJql", {"cloudId": cloud_id, "jql": "created >= -1d", "maxResults": 1,
@@ -88,7 +88,7 @@ async def probe_rovo(mcp_url: str, headers: dict[str, str], cloud_id: str) -> st
         if "permission to connect via API token" in msg:
             return ("Rovo MCP rejected the API token. Either API-token auth is off for the org "
                     "(admin.atlassian.com > Rovo MCP server > Authentication), or the token isn't "
-                    "a scoped token with the Jira agent-interface scopes: set ROVO_API_TOKEN")
+                    "a scoped token with the Jira agent-interface scopes (see JIRA_API_TOKEN in .env.example)")
         return msg[:300]
     return None
 

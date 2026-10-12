@@ -77,7 +77,7 @@ async def test_probe_rovo_reports_api_token_rejection(monkeypatch):
 
     monkeypatch.setattr(rovo.McpToolClient, "call", denied)
     err = await rovo.probe_rovo("https://mcp.example/v2/mcp", {}, "cloud-1")
-    assert "ROVO_API_TOKEN" in err and "Authentication" in err
+    assert "scoped token" in err and "Authentication" in err
 
 
 @pytest.mark.asyncio
@@ -89,4 +89,13 @@ async def test_probe_rovo_ok_and_missing_cloud_id(monkeypatch):
 
     monkeypatch.setattr(rovo.McpToolClient, "call", ok)
     assert await rovo.probe_rovo("u", {}, "cloud-1") is None
-    assert "ATLASSIAN_CLOUD_ID" in await rovo.probe_rovo("u", {}, "")
+    assert "cloud id" in await rovo.probe_rovo("u", {}, "")
+
+
+def test_jira_rest_goes_through_gateway_when_cloud_id_known():
+    from app.jira import JiraClient, api_base
+    assert api_base("https://x.atlassian.net/", "cid") == "https://api.atlassian.com/ex/jira/cid"
+    assert api_base("https://x.atlassian.net/", "") == "https://x.atlassian.net"
+    c = JiraClient("https://x.atlassian.net", "e", "t", "cid")
+    assert str(c.http.base_url).startswith("https://api.atlassian.com/ex/jira/cid")
+    assert c.browse_url("OPS-1") == "https://x.atlassian.net/browse/OPS-1"
