@@ -8,6 +8,7 @@ Never prints secret values.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sys
 
@@ -15,7 +16,8 @@ import httpx
 
 from .causely import CauselyClient
 from .causely_auth import CauselyAuth
-from .rovo import probe_rovo
+from .mcp_client import McpToolClient
+from .rovo import _data, probe_rovo
 from .jira import api_base
 from .settings import SEVERITY_RANK, Settings
 
@@ -72,8 +74,10 @@ async def doctor() -> int:
             _line(FAIL, "Jira", "no credentials; set JIRA_BASE_URL + JIRA_API_TOKEN, or JIRA_DRY_RUN=true")
             failed = True
     else:
-        failed |= await _check_jira(s)
-        failed |= await _check_rovo(s)
+        rovo_failed = await _check_rovo(s)
+        failed |= rovo_failed
+        if not (rovo_failed and s.jira_cfg.get("backend", "rovo") == "rovo"):
+            failed |= await _check_jira(s)
 
     _line(OK if s.teams_workflow_url else WARN, "Teams",
           "webhook set" if s.teams_workflow_url else "TEAMS_WORKFLOW_URL not set: cards are only logged")
@@ -81,48 +85,82 @@ async def doctor() -> int:
     return 1 if failed else 0
 
 
+class _JiraFetchError(Exception):
+    pass
+
+
 async def _check_jira(s: Settings) -> bool:
-    """True if something failed. Uses REST directly: createmeta is the source of truth."""
+    """True if something failed. Reads Jira's create metadata, the source of truth for what a
+    create needs, through whichever backend the bot will use."""
     issue_type = s.jira_cfg.get("issue_type", "Bug")
+    cloud_id = await s.resolve_cloud_id()
+    if not cloud_id:
+        _line(WARN, "Atlassian cloud id", "couldn't look it up from JIRA_BASE_URL; set ATLASSIAN_CLOUD_ID")
+
+    if s.jira_cfg.get("backend", "rovo") == "rovo":
+        mcp = McpToolClient(s.rovo_mcp_url, s.rovo_headers)
+
+        async def fetch(project: str, type_id: str | None = None) -> dict:
+            # Rovo MCP v2 serves these through its generic executeRead tool.
+            inputs: dict = {"cloudId": cloud_id, "projectIdOrKey": project}
+            name = "listJiraProjectIssueTypesMetadata"
+            if type_id is not None:
+                name, inputs["issueTypeId"] = "getJiraIssueTypeMetaWithFields", type_id
+            try:
+                res = await mcp.call("executeRead", {"name": name, "cloudId": cloud_id, "inputs": inputs})
+            except RuntimeError as e:
+                raise _JiraFetchError(f"Rovo MCP: {str(e)[:200]}") from e
+            if "text" in res:  # some servers return the payload as a JSON string
+                res = json.loads(res["text"])
+            return _data(res)
+
+        return await _check_issue_types(s, issue_type, fetch)
+
     auth = (s.jira_email, s.jira_api_token) if s.jira_api_token else None
     headers = {"Accept": "application/json"}
     if auth is None:
         headers["Authorization"] = f"Bearer {s.atlassian_service_key}"
-    cloud_id = await s.resolve_cloud_id()
-    if not cloud_id:
-        _line(WARN, "Atlassian cloud id", "couldn't look it up from JIRA_BASE_URL; set ATLASSIAN_CLOUD_ID")
     async with httpx.AsyncClient(base_url=api_base(s.jira_base_url, cloud_id), timeout=20,
                                  auth=auth, headers=headers) as http:
-        failed = False
-        for project in s.allowed_projects:
-            r = await http.get(f"/rest/api/3/issue/createmeta/{project}/issuetypes")
+        async def fetch(project: str, type_id: str | None = None) -> dict:
+            path = f"/rest/api/3/issue/createmeta/{project}/issuetypes" + (f"/{type_id}" if type_id else "")
+            r = await http.get(path, params={"maxResults": 100})
             if r.status_code == 401:
-                _line(FAIL, f"Jira {project}", "HTTP 401: JIRA_EMAIL / JIRA_API_TOKEN rejected. Use a scoped "
-                      "API token with the scopes listed in .env.example")
-                failed = True
-                continue
+                raise _JiraFetchError("HTTP 401: JIRA_EMAIL / JIRA_API_TOKEN rejected. With jira.backend: rest, "
+                                      "use a Jira API token (see .env.example)")
             if r.status_code != 200:
-                _line(FAIL, f"Jira {project}", f"HTTP {r.status_code}; project missing, or the token lacks "
-                      "read:jira-work / write:jira-work, or you can't create issues there")
-                failed = True
-                continue
-            types = {t["name"]: t["id"] for t in r.json().get("issueTypes", r.json().get("values", []))}
+                raise _JiraFetchError(f"HTTP {r.status_code}; project missing, or the token lacks "
+                                      "read:jira-work / write:jira-work, or you can't create issues there")
+            return r.json()
+
+        return await _check_issue_types(s, issue_type, fetch)
+
+
+async def _check_issue_types(s: Settings, issue_type: str, fetch) -> bool:
+    failed = False
+    sent = {"project", "issuetype", "summary", "description", "labels", "priority"}
+    for project in s.allowed_projects:
+        try:
+            meta = await fetch(project)
+            types = {t["name"]: t["id"] for t in meta.get("issueTypes", meta.get("values", []))}
             if issue_type not in types:
                 _line(FAIL, f"Jira {project}", f"issue type {issue_type!r} not found; available: {sorted(types)}")
                 failed = True
                 continue
-            r = await http.get(f"/rest/api/3/issue/createmeta/{project}/issuetypes/{types[issue_type]}",
-                               params={"maxResults": 100})
-            fields = r.json().get("fields", r.json().get("values", []))
-            sent = {"project", "issuetype", "summary", "description", "labels", "priority"}
-            extra = [f["name"] for f in fields if f.get("required") and f["fieldId"] not in sent]
-            if extra:
-                _line(FAIL, f"Jira {project}", f"{issue_type} requires fields the bot doesn't send: {extra}. "
-                      "Pick another issue_type or make them optional")
-                failed = True
-            else:
-                _line(OK, f"Jira {project}", f"can create {issue_type}")
-        return failed
+            meta = await fetch(project, types[issue_type])
+        except _JiraFetchError as e:
+            _line(FAIL, f"Jira {project}", str(e))
+            failed = True
+            continue
+        fields = meta.get("fields", meta.get("values", []))
+        extra = [f["name"] for f in fields if f.get("required") and f.get("fieldId") not in sent]
+        if extra:
+            _line(FAIL, f"Jira {project}", f"{issue_type} requires fields the bot doesn't send: {extra}. "
+                  "Pick another issue_type or make them optional")
+            failed = True
+        else:
+            _line(OK, f"Jira {project}", f"can create {issue_type}")
+    return failed
 
 
 async def _check_rovo(s: Settings) -> bool:
@@ -136,7 +174,7 @@ async def _check_rovo(s: Settings) -> bool:
         _line(OK, "Rovo MCP", "reachable" + (", duplicate check on" if dedup else ""))
         return False
     if backend == "rovo":
-        _line(FAIL, "Rovo MCP", f"{err}. jira.backend is rovo, so the service won't start; use backend: rest")
+        _line(FAIL, "Rovo MCP", f"{err}. jira.backend is rovo, so the service won't start")
         return True
     _line(WARN, "Rovo MCP", f"{err}. The duplicate check will be turned off at startup; "
           "set rovo.dedup_check: false to silence this")

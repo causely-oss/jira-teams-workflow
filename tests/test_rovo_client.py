@@ -61,7 +61,8 @@ async def test_comment_sends_markdown():
 
 @pytest.mark.asyncio
 async def test_add_labels_merges_existing():
-    c = client({"getJiraIssue": {"key": "DEV-1", "fields": {"labels": ["mcp"], "status": {}}},
+    c = client({"searchJiraIssuesUsingJql": {"data": {"issues": [
+                    {"key": "DEV-1", "fields": {"labels": ["mcp"], "status": {}}}]}},
                 "editJiraIssue": {}})
     await c.add_labels("DEV-1", ["causely-issue-x"])
     assert c.mcp.calls[-1][1]["fields"]["labels"] == ["causely-issue-x", "mcp"]
@@ -99,3 +100,20 @@ def test_jira_rest_goes_through_gateway_when_cloud_id_known():
     c = JiraClient("https://x.atlassian.net", "e", "t", "cid")
     assert str(c.http.base_url).startswith("https://api.atlassian.com/ex/jira/cid")
     assert c.browse_url("OPS-1") == "https://x.atlassian.net/browse/OPS-1"
+
+
+@pytest.mark.asyncio
+async def test_v2_data_wrapper_and_ticket_lookup():
+    c = client({"searchJiraIssuesUsingJql": {"data": {"issues": [{"key": "TB-4", "fields": {
+        "summary": "s", "labels": ["causely"], "created": "2026-10-08",
+        "status": {"name": "Backlog", "statusCategory": {"key": "new"}}}}]}}})
+    assert await c.find_by_issue_id("x", ["TB"]) == "TB-4"
+    t = await c.get_ticket("TB-4")
+    assert t["labels"] == ["causely"] and t["status_category"] == "new"
+    assert c.mcp.calls[-1][1]["view"] == "full" and c.mcp.calls[-1][1]["jql"] == 'key = "TB-4"'
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_missing_returns_none():
+    c = client({"searchJiraIssuesUsingJql": RuntimeError("Issue does not exist or you do not have permission")})
+    assert await c.get_ticket("TB-99999") is None

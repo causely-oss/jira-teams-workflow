@@ -65,6 +65,13 @@ def _adf_to_markdown(body: dict | str) -> str:
     return "\n\n".join(lines)
 
 
+def _data(res: Any) -> dict:
+    """Rovo MCP v2 wraps every result in {"data": {...}}."""
+    if isinstance(res, dict) and isinstance(res.get("data"), dict):
+        return res["data"]
+    return res if isinstance(res, dict) else {}
+
+
 def rovo_headers(email: str, api_token: str, service_key: str = "") -> dict[str, str]:
     if service_key:
         return {"Authorization": f"Bearer {service_key}"}
@@ -109,7 +116,7 @@ class RovoJiraClient:
             "jql": f'project in ({",".join(projects)}) AND labels = "{issue_label(issue_id)}" ORDER BY created ASC',
             "fields": ["key"], "maxResults": 50,
         })
-        issues = res.get("issues", []) if isinstance(res, dict) else []
+        issues = _data(res).get("issues", [])
         return issues[0]["key"] if issues else None
 
     async def project_exists(self, key: str) -> bool:
@@ -136,17 +143,21 @@ class RovoJiraClient:
         return True
 
     async def get_ticket(self, key: str) -> dict | None:
+        # getJiraIssue ignores the field list and leaves out labels and the status category.
+        # A JQL search with view "full" returns both, and stays small.
         try:
-            res = await self.mcp.call("getJiraIssue", {
-                "cloudId": self.cloud_id, "issueIdOrKey": key,
-                "fields": ["summary", "status", "labels", "created"],
-                "responseContentFormat": "markdown",
+            res = await self.mcp.call("searchJiraIssuesUsingJql", {
+                "cloudId": self.cloud_id, "jql": f'key = "{key}"', "maxResults": 1,
+                "fields": ["summary", "status", "labels", "created"], "view": "full",
             })
-        except RuntimeError:
+        except RuntimeError:  # unknown key, or no permission to see it
             return None
-        f = res.get("fields", {}) if isinstance(res, dict) else {}
+        issues = _data(res).get("issues", [])
+        if not issues:
+            return None
+        f = issues[0].get("fields", {})
         return {
-            "key": res.get("key", key),
+            "key": issues[0].get("key", key),
             "summary": f.get("summary", ""),
             "labels": f.get("labels", []) or [],
             "created": f.get("created", ""),

@@ -84,16 +84,16 @@ Ground rules:
    c. POST /replay/alert/generic for a service that doesn't exist. Expect "no_issue".
 8. Summarize what happened and what it cost (the "triage done ... cost=" log lines).
    Then ask whether I want to try real Jira. If yes, stop the server and walk me through:
+   - Ask whether my Atlassian org admin has allowed API tokens for the Rovo MCP server
+     (admin.atlassian.com > Rovo MCP server > Authentication). This picks the setup:
+     - Yes: keep jira.backend: rovo. My token must be a SCOPED token for the
+       "Atlassian MCP V2" app with the scopes listed above JIRA_API_TOKEN in .env.example.
+     - No or not sure: set jira.backend: rest and rovo.dedup_check: false. My token is a
+       classic Jira API token (id.atlassian.com > Security > API tokens).
    - .env: I fill in JIRA_BASE_URL (https://<site>.atlassian.net), JIRA_EMAIL, and
-     JIRA_API_TOKEN, then set JIRA_DRY_RUN=false. Tell me the token must be a SCOPED one:
-     id.atlassian.com > Security > API tokens > "Create API token with scopes" > Jira,
-     with the scopes listed above JIRA_API_TOKEN in .env.example.
-   - config.yaml:
-     - Ask for the key of a Jira project I can create issues in, ideally a test or
-       sandbox project. Replace TEST with it in jira.projects.default and allowed.
-     - Keep jira.backend: rest.
-     - Rovo duplicate check: ask whether my Atlassian org admin has enabled API-token
-       access for the Rovo MCP server. If I don't know, set rovo.dedup_check: false.
+     JIRA_API_TOKEN, then set JIRA_DRY_RUN=false.
+   - config.yaml: ask for the key of a Jira project I can create issues in, ideally a test
+     or sandbox project. Replace TEST with it in jira.projects.default and allowed.
    - Run doctor again. It checks that the project exists, that jira.issue_type exists
      and has no required fields the bot doesn't send (for example Components on Bug),
      and whether Rovo MCP accepts my token. Fix any FAIL line before going on. If
@@ -113,7 +113,7 @@ Ground rules:
 
 Rovo MCP is used in two places:
 
-1. **Jira backend (`jira.backend: rovo`, optional).** Every Jira call goes through the Rovo MCP server: the label search, create, comment, and labeling. Code calls these tools directly with fixed arguments, so no model is involved and the behavior is the same as the REST backend. `config.example.yaml` ships with `backend: rest`, which works with a plain Jira API token.
+1. **Jira backend (`jira.backend: rovo`, the default in `config.example.yaml`).** Every Jira call goes through the Rovo MCP server: the label search, create, comment, and labeling. Code calls these tools directly with fixed arguments, so no model is involved. One token covers tickets and the duplicate check. The alternative, `backend: rest`, calls the Jira REST API with a classic token, but then the duplicate check can't run.
 2. **Duplicate check before creating a ticket (`rovo.dedup_check`).** The label search only finds tickets this bot created. Before opening a new ticket, a read-only agent uses Rovo's `searchJiraIssuesUsingJql` and `getJiraIssue` to look for an open ticket a person already filed for the same problem. What happens next depends on its confidence:
    - **High confidence and the ticket is not Done:** the bot adds the `causely-issue-<id>` label and an evidence comment to that ticket, and creates nothing. From then on the label search finds it.
    - **Medium confidence:** the bot creates a ticket, lists the candidate as a possible duplicate, and flags it in the Teams card.
@@ -127,8 +127,8 @@ Matching on text alone is not reliable. A `text ~ "payment-gw"` search also retu
 Optional: setting `use_rovo_search: true` adds one Rovo Search call that also covers Confluence, so past postmortems and runbooks can appear in the ticket. Each call costs up to 10 Rovo credits, so this is off by default.
 
 **Rovo MCP setup:** both uses need two things:
-- An Atlassian org admin enables API token authentication at admin.atlassian.com > Rovo MCP server > Authentication.
-- `JIRA_API_TOKEN` is a **scoped** API token that includes the Jira `agent-interface` scopes (listed in `.env.example`). A classic token is enough for creating tickets, but Rovo rejects it.
+- An Atlassian org admin allows API tokens at admin.atlassian.com > Rovo MCP server > Authentication.
+- `JIRA_API_TOKEN` is a **scoped** API token for the **Atlassian MCP V2** app, with the Jira `agent-interface` scopes listed in `.env.example`. Tokens for the Jira app don't offer those scopes, and Rovo rejects classic tokens.
 
 Without both, Rovo MCP rejects every call ("You don't have permission to connect via API token"). Use a service account API key (`ATLASSIAN_SERVICE_KEY`, Bearer auth) so tickets show the bot as their author instead of a person.
 
