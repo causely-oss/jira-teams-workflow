@@ -24,6 +24,9 @@ class Settings:
     jira_base_url: str = field(default_factory=lambda: os.getenv("JIRA_BASE_URL", ""))
     jira_email: str = field(default_factory=lambda: os.getenv("JIRA_EMAIL", ""))
     jira_api_token: str = field(default_factory=lambda: os.getenv("JIRA_API_TOKEN", ""))
+    # Rovo MCP needs a scoped API token (agent-interface scopes). Classic tokens keep working
+    # for Jira REST, so this is separate. Falls back to JIRA_API_TOKEN when unset.
+    rovo_api_token: str = field(default_factory=lambda: os.getenv("ROVO_API_TOKEN", ""))
     rovo_mcp_url: str = field(default_factory=lambda: os.getenv("ROVO_MCP_URL", "https://mcp.atlassian.com/v1/mcp"))
     atlassian_cloud_id: str = field(default_factory=lambda: os.getenv("ATLASSIAN_CLOUD_ID", ""))
     atlassian_service_key: str = field(default_factory=lambda: os.getenv("ATLASSIAN_SERVICE_KEY", ""))
@@ -87,6 +90,12 @@ class Settings:
             errors.append(f"projects both allowed and blocked: {sorted(overlap)}")
         if errors:
             raise ValueError("Invalid Jira project config:\n  - " + "\n  - ".join(errors))
+
+    @property
+    def rovo_headers(self) -> dict[str, str]:
+        from .rovo import rovo_headers
+        return rovo_headers(self.jira_email, self.rovo_api_token or self.jira_api_token,
+                            self.atlassian_service_key)
 
     @property
     def has_jira_credentials(self) -> bool:

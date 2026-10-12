@@ -92,8 +92,9 @@ Ground rules:
      - Keep jira.backend: rest.
      - Rovo duplicate check: ask whether my Atlassian org admin has enabled API-token
        access for the Rovo MCP server. If I don't know, set rovo.dedup_check: false.
-       If I say yes, set ATLASSIAN_CLOUD_ID in .env (from
-       https://<site>.atlassian.net/_edge/tenant_info).
+       If I say yes, I put a scoped API token with the read:jira:agent-interface and
+       search:jira:agent-interface scopes in ROVO_API_TOKEN, and you set
+       ATLASSIAN_CLOUD_ID in .env (from https://<site>.atlassian.net/_edge/tenant_info).
    - Run doctor again. It checks that the project exists, that jira.issue_type exists
      and has no required fields the bot doesn't send (for example Components on Bug),
      and whether Rovo MCP accepts my token. Fix any FAIL line before going on. If
@@ -126,7 +127,12 @@ Matching on text alone is not reliable. A `text ~ "payment-gw"` search also retu
 
 Optional: setting `use_rovo_search: true` adds one Rovo Search call that also covers Confluence, so past postmortems and runbooks can appear in the ticket. Each call costs up to 10 Rovo credits, so this is off by default.
 
-**Rovo MCP setup:** both uses need an Atlassian org admin to enable API token authentication at admin.atlassian.com > Rovo MCP server > Authentication, plus `ATLASSIAN_CLOUD_ID` in `.env`. Until then, Rovo MCP rejects every call ("You don't have permission to connect via API token"). Use a service account API key (`ATLASSIAN_SERVICE_KEY`, Bearer auth) so tickets show the bot as their author instead of a person.
+**Rovo MCP setup:** both uses need three things:
+- An Atlassian org admin enables API token authentication at admin.atlassian.com > Rovo MCP server > Authentication.
+- A **scoped** API token with the Jira `agent-interface` scopes, set as `ROVO_API_TOKEN`: `read:jira:agent-interface` and `search:jira:agent-interface` for the duplicate check, plus `write:jira:agent-interface` for the rovo backend. A classic API token works for Jira REST but Rovo rejects it. `ROVO_API_TOKEN` is used only for Rovo, so `JIRA_API_TOKEN` can stay classic.
+- `ATLASSIAN_CLOUD_ID` in `.env`.
+
+Without all three, Rovo MCP rejects every call ("You don't have permission to connect via API token"). Use a service account API key (`ATLASSIAN_SERVICE_KEY`, Bearer auth) so tickets show the bot as their author instead of a person.
 
 At startup the service makes one Rovo read to check access. If `backend: rovo` and Rovo is unusable, startup fails. If only the duplicate check is on, it is turned off with a warning, so it doesn't run (and cost money) without being able to search. `python -m app.cli doctor` reports the same check.
 

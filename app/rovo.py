@@ -86,8 +86,9 @@ async def probe_rovo(mcp_url: str, headers: dict[str, str], cloud_id: str) -> st
     except Exception as e:  # noqa: BLE001 - any failure means "not usable"
         msg = str(e)
         if "permission to connect via API token" in msg:
-            return ("Rovo MCP rejects API tokens for this org. An org admin must enable it at "
-                    "admin.atlassian.com > Rovo MCP server > Authentication")
+            return ("Rovo MCP rejected the API token. Either API-token auth is off for the org "
+                    "(admin.atlassian.com > Rovo MCP server > Authentication), or the token isn't "
+                    "a scoped token with the Jira agent-interface scopes: set ROVO_API_TOKEN")
         return msg[:300]
     return None
 

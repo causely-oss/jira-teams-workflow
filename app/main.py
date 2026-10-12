@@ -21,7 +21,7 @@ from .causely import CauselyClient
 from .causely_auth import CauselyAuth
 from .dryrun import DryRunJira
 from .jira import JiraClient
-from .rovo import RovoJiraClient, probe_rovo, rovo_headers
+from .rovo import RovoJiraClient, probe_rovo
 from .rovo_agent import find_existing_ticket
 from .settings import Settings
 from .store import Store
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
     s = Settings.load()
     s.validate_projects()  # no allowed list or a blocked default -> refuse to start
     app.state.settings = s
-    r_headers = rovo_headers(s.jira_email, s.jira_api_token, s.atlassian_service_key)
+    r_headers = s.rovo_headers
     jira = None
     if s.has_jira_credentials:
         if s.jira_cfg.get("backend", "rovo") == "rovo":

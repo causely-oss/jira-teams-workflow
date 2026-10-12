@@ -77,7 +77,7 @@ async def test_probe_rovo_reports_api_token_rejection(monkeypatch):
 
     monkeypatch.setattr(rovo.McpToolClient, "call", denied)
     err = await rovo.probe_rovo("https://mcp.example/v2/mcp", {}, "cloud-1")
-    assert "org admin must enable" in err
+    assert "ROVO_API_TOKEN" in err and "Authentication" in err
 
 
 @pytest.mark.asyncio

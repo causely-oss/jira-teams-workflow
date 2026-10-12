@@ -15,7 +15,7 @@ import httpx
 
 from .causely import CauselyClient
 from .causely_auth import CauselyAuth
-from .rovo import probe_rovo, rovo_headers
+from .rovo import probe_rovo
 from .settings import SEVERITY_RANK, Settings
 
 OK, WARN, FAIL = "ok  ", "warn", "FAIL"
@@ -121,8 +121,7 @@ async def _check_rovo(s: Settings) -> bool:
     if backend != "rovo" and not dedup:
         _line(OK, "Rovo MCP", "not used (backend rest, rovo.dedup_check false)")
         return False
-    err = await probe_rovo(s.rovo_mcp_url, rovo_headers(s.jira_email, s.jira_api_token, s.atlassian_service_key),
-                           s.atlassian_cloud_id)
+    err = await probe_rovo(s.rovo_mcp_url, s.rovo_headers, s.atlassian_cloud_id)
     if err is None:
         _line(OK, "Rovo MCP", "reachable" + (", duplicate check on" if dedup else ""))
         return False
