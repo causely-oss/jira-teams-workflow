@@ -1,8 +1,8 @@
 jira:
   # rovo = all Jira reads/writes go through the Atlassian Rovo MCP server (called from code).
   # rest = Jira Cloud REST v3 directly. Same behavior either way.
-  # rest until an org admin enables Rovo MCP API-token auth. The personal API token
-  # can call Jira REST today; Rovo MCP rejects it.
+  # Start with rest: it works with a plain Jira API token. rovo needs an org admin to enable
+  # API-token auth for the Rovo MCP server, and the service refuses to start without it.
   backend: rest
 
   # Where the bot may write. There is no implicit default: the service refuses to start
@@ -47,6 +47,8 @@ rovo:
   # Before opening a ticket, a read-only agent searches Jira via Rovo for an open ticket a
   # person already filed for the same problem. High-confidence match -> attach to it
   # (label + evidence comment) instead of creating. Medium -> create, flag possible duplicate.
+  # Needs Rovo MCP API-token access (an org admin enables it) and ATLASSIAN_CLOUD_ID. Without
+  # it, the check is turned off at startup with a warning. Run `python -m app.cli doctor`.
   dedup_check: true
   lookback_days: 14            # Rovo searches only jira.projects.allowed
   # Rovo Search also covers Confluence (past postmortems, runbooks) but costs up to

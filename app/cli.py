@@ -15,6 +15,7 @@ import httpx
 
 from .causely import CauselyClient
 from .causely_auth import CauselyAuth
+from .rovo import probe_rovo, rovo_headers
 from .settings import SEVERITY_RANK, Settings
 
 OK, WARN, FAIL = "ok  ", "warn", "FAIL"
@@ -71,6 +72,7 @@ async def doctor() -> int:
             failed = True
     else:
         failed |= await _check_jira(s)
+        failed |= await _check_rovo(s)
 
     _line(OK if s.teams_workflow_url else WARN, "Teams",
           "webhook set" if s.teams_workflow_url else "TEAMS_WORKFLOW_URL not set: cards are only logged")
@@ -111,6 +113,25 @@ async def _check_jira(s: Settings) -> bool:
             else:
                 _line(OK, f"Jira {project}", f"can create {issue_type}")
         return failed
+
+
+async def _check_rovo(s: Settings) -> bool:
+    backend = s.jira_cfg.get("backend", "rovo")
+    dedup = bool(s.rovo_cfg.get("dedup_check", True))
+    if backend != "rovo" and not dedup:
+        _line(OK, "Rovo MCP", "not used (backend rest, rovo.dedup_check false)")
+        return False
+    err = await probe_rovo(s.rovo_mcp_url, rovo_headers(s.jira_email, s.jira_api_token, s.atlassian_service_key),
+                           s.atlassian_cloud_id)
+    if err is None:
+        _line(OK, "Rovo MCP", "reachable" + (", duplicate check on" if dedup else ""))
+        return False
+    if backend == "rovo":
+        _line(FAIL, "Rovo MCP", f"{err}. jira.backend is rovo, so the service won't start; use backend: rest")
+        return True
+    _line(WARN, "Rovo MCP", f"{err}. The duplicate check will be turned off at startup; "
+          "set rovo.dedup_check: false to silence this")
+    return False
 
 
 async def issues() -> int:

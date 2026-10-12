@@ -72,6 +72,26 @@ def rovo_headers(email: str, api_token: str, service_key: str = "") -> dict[str,
     return {"Authorization": f"Basic {basic}"}
 
 
+async def probe_rovo(mcp_url: str, headers: dict[str, str], cloud_id: str) -> str | None:
+    """One cheap read to prove Rovo MCP accepts these credentials. None = OK, else the reason.
+
+    Without org-admin approval, Rovo MCP rejects API tokens on every call. An agent that
+    can't call its tools would just report "no duplicate", so check before relying on it."""
+    if not cloud_id:
+        return "ATLASSIAN_CLOUD_ID is not set"
+    try:
+        await McpToolClient(mcp_url, headers).call(
+            "searchJiraIssuesUsingJql", {"cloudId": cloud_id, "jql": "created >= -1d", "maxResults": 1,
+                                         "fields": ["key"]})
+    except Exception as e:  # noqa: BLE001 - any failure means "not usable"
+        msg = str(e)
+        if "permission to connect via API token" in msg:
+            return ("Rovo MCP rejects API tokens for this org. An org admin must enable it at "
+                    "admin.atlassian.com > Rovo MCP server > Authentication")
+        return msg[:300]
+    return None
+
+
 class RovoJiraClient:
     def __init__(self, mcp_url: str, headers: dict[str, str], cloud_id: str, site_url: str):
         self.mcp = McpToolClient(mcp_url, headers)

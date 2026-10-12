@@ -1,12 +1,12 @@
 # Causely → Jira → Microsoft Teams workflow
 
-Open one Jira ticket per [Causely](https://www.causely.ai) Issue, keep it updated with Causely's evidence, and post every step to a Microsoft Teams channel.
+Open one Jira ticket per [Causely](https://www.causely.ai) Issue, keep it updated with evidence, and post every step to a Microsoft Teams channel.
 
-There are two triggers:
+There are two paths to trigger this workflow:
 - **A Causely Issue notification.** The Issue goes straight to ticketing.
 - **An alert from another tool** (Datadog, Alertmanager, Dynatrace, or any JSON). A read-only Claude agent uses the Causely MCP server to find the Causely Issue that explains the alert, then that Issue goes to ticketing.
 
-Both triggers end in the same code path, so an Issue never gets two tickets.
+Both triggers end in the same code path, ensuring there is a single Jira ticket to track the underlying cause of the issue and resolution. 
 
 **You need:**
 - A Causely account and an API client (id and secret) for the Causely MCP server
@@ -65,8 +65,7 @@ Ground rules:
    don't show it. In config.yaml, set jira.projects.default to TEST and allowed to [TEST].
    This is a placeholder, because dry run writes nothing.
 4. Ask me to fill in ANTHROPIC_API_KEY, CAUSELY_CLIENT_ID and CAUSELY_CLIENT_SECRET in .env.
-   Tell me that the three CAUSELY_*_URL values must all point at the same Causely
-   environment (production by default). Wait until I say I'm done.
+   . Wait until I say I'm done.
 5. Run `.venv/bin/python -m app.cli doctor` and help me fix every FAIL line. In dry run,
    the Jira and Teams lines may say "warn" or "dry run". That's expected.
 6. Run `.venv/bin/python -m app.cli issues`. If it lists nothing, offer to set
@@ -84,15 +83,27 @@ Ground rules:
       explain that triage follows Causely's causal chain to the root cause.
    c. POST /replay/alert/generic for a service that doesn't exist. Expect "no_issue".
 8. Summarize what happened and what it cost (the "triage done ... cost=" log lines).
-   Then ask whether I want to try real Jira. If yes, walk me through these steps:
-   - setting JIRA_BASE_URL, JIRA_EMAIL and JIRA_API_TOKEN (create the token at
-     id.atlassian.com > Security > API tokens)
-   - choosing a test project key for config.yaml
-   - setting JIRA_DRY_RUN=false and running doctor again (it checks that the issue type
-     has no extra required fields)
-   - replaying one Issue
+   Then ask whether I want to try real Jira. If yes, stop the server and walk me through:
+   - .env: I fill in JIRA_BASE_URL (https://<site>.atlassian.net), JIRA_EMAIL, and
+     JIRA_API_TOKEN (id.atlassian.com > Security > API tokens), then set JIRA_DRY_RUN=false.
+   - config.yaml:
+     - Ask for the key of a Jira project I can create issues in, ideally a test or
+       sandbox project. Replace TEST with it in jira.projects.default and allowed.
+     - Keep jira.backend: rest.
+     - Rovo duplicate check: ask whether my Atlassian org admin has enabled API-token
+       access for the Rovo MCP server. If I don't know, set rovo.dedup_check: false.
+       If I say yes, set ATLASSIAN_CLOUD_ID in .env (from
+       https://<site>.atlassian.net/_edge/tenant_info).
+   - Run doctor again. It checks that the project exists, that jira.issue_type exists
+     and has no required fields the bot doesn't send (for example Components on Bug),
+     and whether Rovo MCP accepts my token. Fix any FAIL line before going on. If
+     issue_type fails, list the project's issue types and pick one without extra
+     required fields. If priority names differ from jira.priority_map, the bot retries
+     without a priority, so that's optional to fix.
+   - Restart the server and replay one Issue. Show me the ticket key and its URL
+     (JIRA_BASE_URL/browse/<key>). Remind me that it's a real ticket I may want to close.
    Optional: put a Teams Workflows "Send webhook alerts to a channel" URL in
-   TEAMS_WORKFLOW_URL.
+   TEAMS_WORKFLOW_URL and restart.
 9. When we're done, stop the server.
 ````
 
@@ -102,7 +113,7 @@ Ground rules:
 
 Rovo MCP is used in two places:
 
-1. **Jira backend (`jira.backend: rovo`, default).** Every Jira call goes through the Rovo MCP server: the label search, create, comment, and labeling. Code calls these tools directly with fixed arguments, so no model is involved and the behavior is the same as the REST backend (`backend: rest`).
+1. **Jira backend (`jira.backend: rovo`, optional).** Every Jira call goes through the Rovo MCP server: the label search, create, comment, and labeling. Code calls these tools directly with fixed arguments, so no model is involved and the behavior is the same as the REST backend. `config.example.yaml` ships with `backend: rest`, which works with a plain Jira API token.
 2. **Duplicate check before creating a ticket (`rovo.dedup_check`).** The label search only finds tickets this bot created. Before opening a new ticket, a read-only agent uses Rovo's `searchJiraIssuesUsingJql` and `getJiraIssue` to look for an open ticket a person already filed for the same problem. What happens next depends on its confidence:
    - **High confidence and the ticket is not Done:** the bot adds the `causely-issue-<id>` label and an evidence comment to that ticket, and creates nothing. From then on the label search finds it.
    - **Medium confidence:** the bot creates a ticket, lists the candidate as a possible duplicate, and flags it in the Teams card.
@@ -115,7 +126,9 @@ Matching on text alone is not reliable. A `text ~ "payment-gw"` search also retu
 
 Optional: setting `use_rovo_search: true` adds one Rovo Search call that also covers Confluence, so past postmortems and runbooks can appear in the ticket. Each call costs up to 10 Rovo credits, so this is off by default.
 
-**Rovo MCP setup:** an Atlassian org admin must enable API token authentication at admin.atlassian.com > Rovo MCP server > Authentication. Use a service account API key (`ATLASSIAN_SERVICE_KEY`, Bearer auth) so tickets show the bot as their author instead of a person.
+**Rovo MCP setup:** both uses need an Atlassian org admin to enable API token authentication at admin.atlassian.com > Rovo MCP server > Authentication, plus `ATLASSIAN_CLOUD_ID` in `.env`. Until then, Rovo MCP rejects every call ("You don't have permission to connect via API token"). Use a service account API key (`ATLASSIAN_SERVICE_KEY`, Bearer auth) so tickets show the bot as their author instead of a person.
+
+At startup the service makes one Rovo read to check access. If `backend: rovo` and Rovo is unusable, startup fails. If only the duplicate check is on, it is turned off with a warning, so it doesn't run (and cost money) without being able to search. `python -m app.cli doctor` reports the same check.
 
 **Use case 1, Causely triggered.** Pulls the Issue from Causely MCP and searches the bot's allowed Jira projects for the label `causely-issue-<id>`. If it finds no ticket, it creates one in the project chosen as described below. If it finds one, it adds an evidence comment. Either way it posts the result to Teams.
 

@@ -65,3 +65,28 @@ async def test_add_labels_merges_existing():
                 "editJiraIssue": {}})
     await c.add_labels("DEV-1", ["causely-issue-x"])
     assert c.mcp.calls[-1][1]["fields"]["labels"] == ["causely-issue-x", "mcp"]
+
+
+@pytest.mark.asyncio
+async def test_probe_rovo_reports_api_token_rejection(monkeypatch):
+    from app import rovo
+
+    async def denied(self, tool, args, **kw):
+        raise RuntimeError('MCP searchJiraIssuesUsingJql failed: {"error":true,"message":"You don\'t have '
+                           'permission to connect via API token. Please ask your organization admin for access."}')
+
+    monkeypatch.setattr(rovo.McpToolClient, "call", denied)
+    err = await rovo.probe_rovo("https://mcp.example/v2/mcp", {}, "cloud-1")
+    assert "org admin must enable" in err
+
+
+@pytest.mark.asyncio
+async def test_probe_rovo_ok_and_missing_cloud_id(monkeypatch):
+    from app import rovo
+
+    async def ok(self, tool, args, **kw):
+        return {"issues": []}
+
+    monkeypatch.setattr(rovo.McpToolClient, "call", ok)
+    assert await rovo.probe_rovo("u", {}, "cloud-1") is None
+    assert "ATLASSIAN_CLOUD_ID" in await rovo.probe_rovo("u", {}, "")

@@ -21,7 +21,7 @@ from .causely import CauselyClient
 from .causely_auth import CauselyAuth
 from .dryrun import DryRunJira
 from .jira import JiraClient
-from .rovo import RovoJiraClient, rovo_headers
+from .rovo import RovoJiraClient, probe_rovo, rovo_headers
 from .rovo_agent import find_existing_ticket
 from .settings import Settings
 from .store import Store
@@ -71,9 +71,19 @@ async def lifespan(app: FastAPI):
     elif real_jira is None:
         raise RuntimeError("Jira credentials missing: set JIRA_BASE_URL and JIRA_API_TOKEN, "
                            "or JIRA_DRY_RUN=true to test without Jira")
+    uses_rovo_backend = real_jira is not None and s.jira_cfg.get("backend", "rovo") == "rovo"
     rc = s.rovo_cfg
+    wants_dedup = bool(rc.get("dedup_check", True)) and real_jira is not None  # needs Atlassian access
+    rovo_error = (await probe_rovo(s.rovo_mcp_url, r_headers, s.atlassian_cloud_id)
+                  if uses_rovo_backend or wants_dedup else None)
+    if uses_rovo_backend and rovo_error:
+        raise RuntimeError(f"jira.backend is rovo but Rovo MCP is not usable: {rovo_error}. "
+                           "Use jira.backend: rest, or fix Rovo access")
+    if wants_dedup and rovo_error:
+        log.warning("Rovo duplicate check disabled: %s", rovo_error)
+        wants_dedup = False
     rovo_check = None
-    if rc.get("dedup_check", True) and real_jira is not None:  # needs Atlassian access
+    if wants_dedup:
         projects = s.allowed_projects  # Rovo only searches where the bot may write
         rovo_check = partial(
             find_existing_ticket, projects=projects, model=s.anthropic_model,
