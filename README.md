@@ -162,17 +162,6 @@ The guardrails:
 
 **Use case 2, alert triggered.** Normalizes the alert, then a read-only Claude agent runs the `causely-alert-triage` decision tree to find the Issue that explains it. That Issue id goes through the same `handle_issue` path, and the alert is attached as evidence. If no active Issue explains the alert, the bot posts to Teams only and does not create a ticket.
 
-## Design choices
-
-- **The agent decides, the code acts.** The LLM only maps an alert to an Issue id. Ticket content comes from Causely: the title and remediation sections (context, requirements, acceptance criteria) from `generate_ticket`, and the evidence (diagnosis, causal chain, symptoms, impact) straight from `get_issue_details`. If `generate_ticket` fails, the bot creates an evidence-only ticket. Every Jira write happens in plain code. The id the agent returns is re-fetched from Causely before it is used, so a wrong id can't create a ticket.
-- **Race-safe across triggers.** A Causely notification and a Datadog alert for the same root cause can arrive within seconds of each other. Both paths take the same per-Issue lock, so you get one ticket plus one evidence comment. The test suite covers this case.
-- **Comments only on real change.** Causely Issues are long-lived. A single Issue can collect 100+ diagnoses in two weeks as the primary diagnosis rotates. A comment is added only for:
-  - a new correlated alert
-  - severity rising above the highest level already reported
-  - the Issue resolving or reactivating
-  - a change in the evidence fingerprint (diagnosis, symptoms, or impact), at most once per cooldown period
-- **Severity floor.** `min_ticket_severity` keeps fully autonomous mode from flooding Jira. Issues below the floor are posted to Teams only.
-
 ## Model usage and cost
 
 Two steps use an LLM agent, through the [Claude Agent SDK](https://docs.claude.com/en/docs/agent-sdk/overview). Everything else, including every Jira and Teams write, is plain code.
@@ -298,7 +287,6 @@ To test real webhooks from a laptop, expose port 8080 with a tunnel such as `clo
 ## Known limitations
 - **Single process only.** For multiple replicas, replace the asyncio lock and SQLite with a Postgres advisory lock or Redis.
 - **Rovo backend.** The code searches the `createJiraIssue` response for the issue key, because the response shape isn't documented. The `rest` backend doesn't have this issue.
-- **Portal links** use `<CAUSELY_PORTAL_URL>/issues/<id>` (see `evidence.portal_link`).
 
 ## Ideas, not yet built
 - A Bot Framework bot for threaded replies and `@bot triage <alert>` in the channel.

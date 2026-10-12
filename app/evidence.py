@@ -23,7 +23,6 @@ def fingerprint(issue: IssueSnapshot) -> str:
 
 
 def portal_link(portal: str, issue: IssueSnapshot) -> str:
-    # Confirm the exact Issue deep-link path in the portal before relying on it.
     return f"{portal.rstrip('/')}/issues/{issue.id}"
 
 
