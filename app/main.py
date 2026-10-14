@@ -90,7 +90,7 @@ async def lifespan(app: FastAPI):
             find_existing_ticket, projects=projects, model=s.anthropic_model,
             rovo_url=s.rovo_mcp_url, rovo_headers=r_headers, cloud_id=s.atlassian_cloud_id,
             lookback_days=int(rc.get("lookback_days", 14)),
-            use_rovo_search=bool(rc.get("use_rovo_search", False)))
+            use_rovo_search=bool(rc.get("use_rovo_search", True)))
     causely_auth = CauselyAuth(s.causely_client_id, s.causely_client_secret, s.causely_token_url)
     app.state.wf = Workflow(
         settings=s,

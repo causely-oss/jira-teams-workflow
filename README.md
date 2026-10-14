@@ -4,13 +4,13 @@ Open one Jira ticket per [Causely](https://www.causely.ai) Issue, keep it update
 
 There are two paths to trigger this workflow:
 - **A Causely Issue notification.** The Issue goes straight to ticketing.
-- **An alert from another tool** (Datadog, Alertmanager, Dynatrace, or any JSON). A read-only Claude agent uses the Causely MCP server to find the Causely Issue that explains the alert, then that Issue goes to ticketing.
+- **An alert from another tool** (Datadog, Alertmanager, Dynatrace, or any JSON). A Claude agent uses the Causely MCP server to find the Causely Issue that explains the alert, then that Issue goes to ticketing.
 
 Both triggers end in the same code path, ensuring there is a single Jira ticket to track the underlying cause of the issue and resolution. 
 
 **You need:**
 - A Causely account and an API client (id and secret) for the Causely MCP server
-- A Jira Cloud site and an account that can create issues in the target project
+- A Jira Cloud site and an account that can create tickets in the target project
 - An Anthropic API key for the Claude Agent SDK (see [Model usage and cost](#model-usage-and-cost))
 - A Teams channel with a Workflows webhook
 - Python 3.11+
@@ -124,11 +124,11 @@ Rovo MCP is used in two places:
 
 Matching on text alone is not reliable. A `text ~ "payment-gw"` search also returns closed, unrelated tickets that only mention the service, which is why the agent judges each match instead of trusting it.
 
-Optional: setting `use_rovo_search: true` adds one Rovo Search call that also covers Confluence, so past postmortems and runbooks can appear in the ticket. Each call costs up to 10 Rovo credits, so this is off by default.
+**Rovo Search (`use_rovo_search`, on by default).** The duplicate check also runs one Rovo Search per new ticket, which covers Confluence, so past postmortems and runbooks can appear in the ticket as related items. Each call costs up to 10 Rovo credits. It uses the Rovo and Confluence scopes on the token. Set `use_rovo_search: false` to skip it.
 
 **Rovo MCP setup:** both uses need two things:
 - An Atlassian org admin allows API tokens at admin.atlassian.com > Rovo MCP server > Authentication.
-- `JIRA_API_TOKEN` is a **scoped** API token for the **Atlassian MCP V2** app, with the Jira `agent-interface` scopes listed in `.env.example`. Tokens for the Jira app don't offer those scopes, and Rovo rejects classic tokens.
+- `JIRA_API_TOKEN` is a **scoped** API token for the **Atlassian MCP V2** app, with the 8 scopes listed in `.env.example`: Jira read, write and search; Rovo and Confluence search and read; and `read:me` and `read:account`, without which every Rovo call fails with a 401. Tokens for the Jira app don't offer these scopes, and Rovo rejects classic tokens.
 
 Without both, Rovo MCP rejects every call ("You don't have permission to connect via API token"). Use a service account API key (`ATLASSIAN_SERVICE_KEY`, Bearer auth) so tickets show the bot as their author instead of a person.
 

@@ -52,6 +52,7 @@ rovo:
   # with a warning. Run `python -m app.cli doctor`.
   dedup_check: true
   lookback_days: 14            # Rovo searches only jira.projects.allowed
-  # Rovo Search also covers Confluence (past postmortems, runbooks) but costs up to
-  # 10 Rovo credits per call. Off by default.
-  use_rovo_search: false
+  # One Rovo Search per new ticket, which also covers Confluence, so past postmortems and
+  # runbooks show up as related items. Costs up to 10 Rovo credits per call. Needs the
+  # search:rovo:agent-interface scope on JIRA_API_TOKEN.
+  use_rovo_search: true

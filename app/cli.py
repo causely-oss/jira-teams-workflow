@@ -172,6 +172,8 @@ async def _check_rovo(s: Settings) -> bool:
     err = await probe_rovo(s.rovo_mcp_url, s.rovo_headers, await s.resolve_cloud_id())
     if err is None:
         _line(OK, "Rovo MCP", "reachable" + (", duplicate check on" if dedup else ""))
+        if dedup and s.rovo_cfg.get("use_rovo_search", True):
+            await _check_rovo_search(s)
         return False
     if backend == "rovo":
         _line(FAIL, "Rovo MCP", f"{err}. jira.backend is rovo, so the service won't start")
@@ -179,6 +181,20 @@ async def _check_rovo(s: Settings) -> bool:
     _line(WARN, "Rovo MCP", f"{err}. The duplicate check will be turned off at startup; "
           "set rovo.dedup_check: false to silence this")
     return False
+
+
+async def _check_rovo_search(s: Settings) -> None:
+    try:
+        res = await McpToolClient(s.rovo_mcp_url, s.rovo_headers).call(
+            "search", {"cloudId": await s.resolve_cloud_id(), "query": "postmortem", "limit": 10})
+        bad = '"error":true' in json.dumps(res).replace(" ", "")
+    except RuntimeError as e:
+        res, bad = str(e), True
+    if bad:
+        _line(WARN, "Rovo Search", f"failed ({str(res)[:150]}). Check JIRA_API_TOKEN has the Rovo and Confluence "
+              "scopes in .env.example, or set rovo.use_rovo_search: false. Duplicate checks still run without it")
+    else:
+        _line(OK, "Rovo Search", "works (Confluence postmortems and runbooks included)")
 
 
 async def issues() -> int:
