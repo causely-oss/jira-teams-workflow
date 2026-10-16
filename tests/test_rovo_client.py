@@ -117,3 +117,22 @@ async def test_v2_data_wrapper_and_ticket_lookup():
 async def test_get_ticket_missing_returns_none():
     c = client({"searchJiraIssuesUsingJql": RuntimeError("Issue does not exist or you do not have permission")})
     assert await c.get_ticket("TB-99999") is None
+
+
+@pytest.mark.asyncio
+async def test_probe_rovo_unwraps_exception_group(monkeypatch):
+    from app import rovo
+
+    class FakeResponse:
+        status_code = 401
+
+    class FakeHTTPError(Exception):
+        response = FakeResponse()
+
+    async def boom(self, tool, args, **kw):
+        raise ExceptionGroup("unhandled errors in a TaskGroup", [FakeHTTPError("Client error '401 Unauthorized'")])
+
+    monkeypatch.setattr(rovo.McpToolClient, "call", boom)
+    err = await rovo.probe_rovo("u", {}, "cloud-1")
+    assert err.startswith("HTTP 401")
+    assert "TaskGroup" not in err

@@ -278,6 +278,11 @@ kubectl -n causely-jira create configmap causely-jira-config --from-file=config.
 kubectl apply -f deploy/kubernetes.yaml
 ```
 
+Notes:
+- `--from-env-file` keeps quote characters as part of the value, so a quoted `JIRA_API_TOKEN='...'` in `.env` is sent with the quotes and Rovo rejects it with a 401. Remove any quotes from `.env` before creating the secret.
+- The Ingress in the manifest has no `ingressClassName`, so on a cluster without a default class it never gets an address. Set the class for your controller. On EKS with the AWS Load Balancer Controller that is `ingressClassName: alb` plus `alb.ingress.kubernetes.io/*` annotations (scheme, target type, health check path `/healthz`).
+- The Service listens on port 80 and forwards to the container's 8080. To test it with `kubectl port-forward`, use `svc/causely-jira 8080:80`, not `8080:8080`.
+
 ### Other hosts
 Any container platform works if you pin it to one always-on instance, keep CPU allocated between requests, and mount a volume for `/data`. Examples: ECS/Fargate, Azure Container Apps, or Cloud Run with min = max = 1 instances and "CPU always allocated". A VM running Docker or systemd behind a TLS proxy also works.
 
