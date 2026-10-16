@@ -79,6 +79,19 @@ def rovo_headers(email: str, api_token: str, service_key: str = "") -> dict[str,
     return {"Authorization": f"Basic {basic}"}
 
 
+def _describe_error(e: BaseException) -> str:
+    """Flatten an exception group (the MCP client raises one) into its leaf causes.
+
+    A bare str() of the group is "unhandled errors in a TaskGroup", which hides an HTTP 401."""
+    if isinstance(e, BaseExceptionGroup):
+        parts = [_describe_error(x) for x in e.exceptions]
+        return "; ".join(dict.fromkeys(parts))
+    resp = getattr(e, "response", None)
+    status = getattr(resp, "status_code", None)
+    msg = str(e).splitlines()[0] if str(e) else type(e).__name__
+    return f"HTTP {status}: {msg}" if status else msg
+
+
 async def probe_rovo(mcp_url: str, headers: dict[str, str], cloud_id: str) -> str | None:
     """One cheap read to prove Rovo MCP accepts these credentials. None = OK, else the reason.
 
@@ -91,7 +104,7 @@ async def probe_rovo(mcp_url: str, headers: dict[str, str], cloud_id: str) -> st
             "searchJiraIssuesUsingJql", {"cloudId": cloud_id, "jql": "created >= -1d", "maxResults": 1,
                                          "fields": ["key"]})
     except Exception as e:  # noqa: BLE001 - any failure means "not usable"
-        msg = str(e)
+        msg = _describe_error(e)
         if "permission to connect via API token" in msg:
             return ("Rovo MCP rejected the API token. Either API-token auth is off for the org "
                     "(admin.atlassian.com > Rovo MCP server > Authentication), or the token isn't "
